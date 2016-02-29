@@ -19,7 +19,7 @@ func main() {
 		panic(err)
 	}
 
-	create := Content{"create", map[string]string{"cpu": "2", "mem": "4"}}
+	create := Content{"delete", map[string]string{"cpu": "2", "mem": "4"}}
 	//	tmp := map[string]string{"act": "create", "cpu": "2", "mem": "4"}
 	operate, err := json.Marshal(create)
 	if err != nil {
@@ -33,6 +33,7 @@ func main() {
 
 	data, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
+		fmt.Println(err)
 		panic(err)
 	}
 
