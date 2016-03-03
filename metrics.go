@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func getAllContainerUuid() []string {
@@ -60,14 +61,16 @@ func getContainerInfo(ID string) []string {
 	//	}
 	//	fmt.Println(dat)
 }
-func getAllContainerStat(uuid string) {
+
+func getAllContainerStat(uuid string) map[string]map[string]int {
 	cpu_res := getContainerCpuStat(uuid)
 	mem_res := getContainerMemStat(uuid)
 	net_res := getContainerNetStat(uuid)
 	io_res := getContainerIoStat(uuid)
 	all_info := map[string]map[string]int{"cpu": cpu_res, "mem": mem_res, "net": net_res, "io": io_res}
-	fmt.Println(all_info)
+	return all_info
 }
+
 func getContainerNetStat(uuid string) map[string]int {
 	cmd := exec.Command("docker", "inspect", "-f", "'{{.State.Pid}}'", uuid)
 	out, err := cmd.Output()
@@ -229,9 +232,66 @@ func getContainerIoStat(uuid string) map[string]int {
 	return res
 }
 func main() {
+	info1 := map[string]map[string]map[string]int{}
+	info2 := map[string]map[string]map[string]int{}
 	ID := getAllContainerUuid()
 	for _, each_uuid := range ID {
-		getAllContainerStat(each_uuid)
+		info1[each_uuid] = getAllContainerStat(each_uuid)
+	}
+	fmt.Println(info1)
+	sleepTime := 3
+	time.Sleep(3 * time.Second)
+	for _, each_uuid := range ID {
+		info2[each_uuid] = getAllContainerStat(each_uuid)
+	}
+	fmt.Println(info2)
+	println("")
+	for _, each_uuid := range ID {
+
+		// CPU
+		cpu_user := (info2[each_uuid]["cpu"]["user"] - info1[each_uuid]["cpu"]["user"]) / sleepTime
+		cpu_system := (info2[each_uuid]["cpu"]["system"] - info1[each_uuid]["cpu"]["system"]) / sleepTime
+		cpu_total := cpu_user + cpu_system
+		println(cpu_total)
+		cpu_num := info1[each_uuid]["cpu"]["cpunum"]
+		cpu_quota := cpu_num * 100
+		cpu_usage := cpu_total / cpu_quota * 100
+		//		cpu_txt := '"|%s|check-vm-cpu|%s|sys_user=%.2f&user=%.2f&sys=%.2f&total_ratio=%.1f&cpu_n=%s&quota=%s", each_uuid, sleepTime, cpu_user, cpu_system, cpu_usage, cpu_num, cpu_quota'
+		fmt.Printf("|%s|check-vm-cpu|%d|sys_user=%d&user=%d&sys=%d&total_ratio=%d&cpu_n=%d&quota=%d\n", each_uuid, sleepTime, cpu_total, cpu_user, cpu_system, cpu_usage, cpu_num, cpu_quota)
+
+		// MEM
+		mem_rss := float64(info1[each_uuid]["mem"]["total_rss"]) / float64(1024)
+		mem_limit := float64(info1[each_uuid]["mem"]["mem_limit"]) / float64(1024)
+		mem_cache := float64(info1[each_uuid]["mem"]["total_cache"]) / float64(1024)
+		mem_mapped_file := float64(info1[each_uuid]["mem"]["total_mapped_file"]) / float64(1024)
+		//		println(mem_rss)
+		//		println(mem_limit)
+		rss_ratio := float64(mem_rss) / float64(mem_limit)
+		fmt.Printf("|%s|check-vm-mem|%d|rss=%.2f&quota=%.2f&cache=%.2f&mapped=%.2f&ratio=%.2f\n", each_uuid, sleepTime, mem_rss, mem_limit, mem_cache, mem_mapped_file, rss_ratio)
+
+		// DISK
+		println("--------------")
+		fmt.Println(info2[each_uuid]["io"]["read"])
+		fmt.Println(info1[each_uuid]["io"]["read"])
+		fmt.Println(info2[each_uuid]["io"]["write"])
+		fmt.Println(info1[each_uuid]["io"]["write"])
+		println("--------------")
+		blkio_write := (float64(info2[each_uuid]["io"]["write"]) - float64(info1[each_uuid]["io"]["write"])) / float64(1024) / float64(sleepTime)
+		blkio_read := (float64(info2[each_uuid]["io"]["read"]) - float64(info1[each_uuid]["io"]["read"])) / float64(1024) / float64(sleepTime)
+		fmt.Printf("|%s|check-vm-blkio|%d|write=%.2f&read=%.2f\n", each_uuid, sleepTime, blkio_write, blkio_read)
+
+		// NET
+		net_rbyte := (float64(info2[each_uuid]["net"]["rbytes"]) - float64(info1[each_uuid]["net"]["rbytes"])) * float64(8) / float64(1024) / float64(1024) / float64(sleepTime)
+		net_tbyte := (float64(info2[each_uuid]["net"]["tbytes"]) - float64(info1[each_uuid]["net"]["tbytes"])) * 8.0 / float64(1024) / float64(1024) / float64(sleepTime)
+		fmt.Printf("|%s|check-vm-net|%d|in=%.2f&out=%.2f\n", each_uuid, sleepTime, net_tbyte, net_rbyte)
 	}
 
 }
+
+//		println("--------------")
+//		fmt.Println(info2[each_uuid]["net"]["rbytes"])
+//		fmt.Println(info1[each_uuid]["net"]["rbytes"])
+//		fmt.Println(info2[each_uuid]["net"]["tbytes"])
+//		fmt.Println(info1[each_uuid]["net"]["tbytes"])
+//		fmt.Println(net_rbyte)
+//		println("--------------")
