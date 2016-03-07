@@ -22,77 +22,59 @@ func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
-func saveLog(loglevel string, content string) bool {
-	time := time.Now().String()
-	timeSlice := strings.Split(time, " ")
-	day := timeSlice[0]
-	dayTime := strings.Split(day, ".")
-	tmpfile := "/opt/server.go_" + dayTime[0]
-	logfile, logfileErr := os.OpenFile(tmpfile, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
+func saveLog(loglevel string, content string) {
+	day := time.Now().Format("2006-01-02") // must 2016-01-02 or time.Now().string()[0:10]
+	logfileName := "/search/docker/docker_vm_info_" + day
+	logfile, logfileErr := os.OpenFile(logfileName, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if logfileErr != nil {
 		fmt.Printf("%s\r\n", logfileErr.Error())
 		os.Exit(-1)
 	}
-	defer logfile.Close()
+	defer logfile.Close() //anytime dont forgot close file
 	logger := log.New(logfile, "[INFO] ", log.LstdFlags)
 	if loglevel == "info" {
-		logger.Println(content)
 	} else if loglevel == "fatal" {
+		logger.SetPrefix("[FATAL] ")
+	} else if loglevel == "warning" {
 		logger.SetPrefix("[WARNING] ")
-		logger.Println(content)
+	} else {
+		logger.SetPrefix("[UNKONW] ")
 	}
-	return true
+	logger.Println(content)
+
 }
 
 func getAllContainerUuid() []string {
 	var files []string
 	dirPath := "/sys/fs/cgroup/cpuacct/system.slice/" // centos7+
-	filesTmp, err := ioutil.ReadDir(dirPath)
+	fileList, err := ioutil.ReadDir(dirPath)
 	if err != nil {
-		fmt.Println("read file list failed!")
-		fmt.Println(err)
+		saveLog("fatal", "Cannot found vm: "+err.Error())
+		os.Exit(-1)
 	}
 
-	for _, fi := range filesTmp {
+	for _, fi := range fileList {
 		if strings.HasPrefix(fi.Name(), "docker-") && strings.HasSuffix(fi.Name(), "scope") {
-			files = append(files, fi.Name())
+			files = append(files, fi.Name()) //fi.Name() get file lists
 		}
 	}
-	//	fmt.Println(files)
 	return files
 }
 
-func getContainerInfo(ID string) []string {
-	//	var dat map[string]interface{}
-	//	cmd := exec.Command("/usr/bin/docker", "inspect ", ID)
-	//fmt.Println(ID)
+func getContainerPid(ID string) string {
 	cmd := exec.Command("docker", "inspect", "-f", "'{{.State.Pid}}'", ID)
 	out, err := cmd.Output()
 	if err != nil {
-		fmt.Println(err)
+		saveLog("warning", "Cannot get docker's uuid"+err.Error())
 	}
-	fmt.Println(reflect.TypeOf(out))
-	println("---------------")
-	fmt.Println(out)
-	outString := strings.Replace(string(out), "\n", " ", -1)
-	//	fmt.Println(out["Id"])
-	println("---------------")
-	fmt.Println(string(outString))
-	outString = strings.Replace(string(outString), "'", "", -1)
-	var res []string
-	res = append(res, outString)
-	fmt.Println(res)
-	return res
-	//	if err := json.Unmarshal(out, &dat); err != nil {
-	//		//		panic(err)
-	//		fmt.Println(err)
-	//	}
-	//	fmt.Println(dat)
+	reg := regexp.MustCompile(`\n|'`)
+	statePid := reg.ReplaceALLString(string(out), "")
+	return statePid
 }
 
 func getAllContainerStat(uuid string) map[string]map[string]int {
 	cpu_res := getContainerCpuStat(uuid)
-	//	mem_res := getContainerMemStat(uuid)	// no need twice
+	//	mem_res := getContainerMemStat(uuid)	// no need twice, collect in main()
 	net_res := getContainerNetStat(uuid)
 	io_res := getContainerIoStat(uuid)
 	//	all_info := map[string]map[string]int{"cpu": cpu_res, "mem": mem_res, "net": net_res, "io": io_res}	//delete mem
@@ -101,25 +83,18 @@ func getAllContainerStat(uuid string) map[string]map[string]int {
 	return all_info
 }
 
-func getContainerNetStat(uuid string) map[string]int {
+func getContainerNetStat(filename string) map[string]int {
 	regA := regexp.MustCompile(`docker-|.scope`)
-	duuid := regA.ReplaceAllString(uuid, "")
+	duuid := regA.ReplaceAllString(file, "")
 
-	cmd := exec.Command("docker", "inspect", "-f", "'{{.State.Pid}}'", duuid)
-	out, err := cmd.Output()
-	if err != nil {
-		fmt.Println(err)
-	}
-	outString := strings.Replace(string(out), "\n", "", -1)
-	outString = strings.Replace(outString, "'", "", -1)
+	statePid = getContainerPid(filename)
 
 	res := map[string]int{}
-	file := "/proc/" + outString + "/net/dev"
-	//	println(file)
+	file := "/proc/" + statePid + "/net/dev" //not in /cgroup but in /proc, so we need docker process id
 	f, err := os.Open(file)
 	defer f.Close()
 	if err != nil {
-		fmt.Println(err)
+		saveLog("warning", "Didn't found nic's file. "+err)
 		os.Exit(1)
 	}
 	buf := bufio.NewReader(f)
@@ -134,7 +109,7 @@ func getContainerNetStat(uuid string) map[string]int {
 		}
 		if strings.HasPrefix(line, "eth") {
 			tmp := strings.Fields(line)
-			//			nic := strings.Replace(tmp[0], ":", "", -1)
+			//nic := strings.Replace(tmp[0], ":", "", -1)
 			rbytes, _ := strconv.Atoi(tmp[1])
 			tbytes, _ := strconv.Atoi(tmp[9])
 			res = map[string]int{"rbytes": rbytes, "tbytes": tbytes}
@@ -142,6 +117,7 @@ func getContainerNetStat(uuid string) map[string]int {
 	}
 	return res
 }
+
 func getContainerMemStat(uuid string) map[string]int {
 	res := map[string]int{}
 	file := "/sys/fs/cgroup/memory/system.slice/" + uuid + "/memory.stat"
@@ -340,17 +316,3 @@ func main() {
 	}
 	wg.Wait()
 }
-
-//		println("--------------")
-//		fmt.Println(info2[each_uuid]["net"]["rbytes"])
-//		fmt.Println(info1[each_uuid]["net"]["rbytes"])
-//		fmt.Println(info2[each_uuid]["net"]["tbytes"])
-//		fmt.Println(info1[each_uuid]["net"]["tbytes"])
-//		fmt.Println(net_rbyte)
-//		println("--------------")
-//		println("--------------")
-//		fmt.Println(info2[each_uuid]["io"]["read"])
-//		fmt.Println(info1[each_uuid]["io"]["read"])
-//		fmt.Println(info2[each_uuid]["io"]["write"])
-//		fmt.Println(info1[each_uuid]["io"]["write"])
-//		println("--------------")
