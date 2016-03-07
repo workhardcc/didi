@@ -69,7 +69,7 @@ func getContainerPid(ID string) string {
 	}
 	reg := regexp.MustCompile(`\n|'`)
 	statePid := reg.ReplaceALLString(string(out), "")
-	return statePid
+	return statePid // like 7595
 }
 
 func getAllContainerStat(uuid string) map[string]map[string]int {
@@ -292,7 +292,7 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 }
 
 func main() {
-	ID := getAllContainerUuid()
+	ID := getAllContainerUuid() //docker-xxx.scope
 	wg := new(sync.WaitGroup)
 
 	// Begin math
@@ -310,7 +310,7 @@ func main() {
 			fmt.Println(err)
 		}
 		regB := regexp.MustCompile(`\n|/|'`)
-		dname := regB.ReplaceAllString(string(out), "")
+		dname := regB.ReplaceAllString(string(out), "") // like docker13808,10.10.138.8
 		wg.Add(1)
 		go calculate(each_uuid, dname, ID, wg)
 	}
