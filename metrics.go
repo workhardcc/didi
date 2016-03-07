@@ -240,6 +240,23 @@ func getContainerIoStat(uuid string) map[string]int {
 	}
 	return res
 }
+func getContainerFsStat(uuid string) {
+	cmd := exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", uuid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-ahTP", "/")
+	out, err := cmd.Output()
+	if err != nil {
+		saveLog("fatal", "Read df info failed: ", err.Error())
+		//		os.Exit(-1)
+	}
+	// Filesystem    Type  Size  Used Avail Use% Mounted on
+	//	/dev/mapper/docker-253:0-9056391-17ea03785e078a621973bd9279f0d4b582a8bce3ba2012a8dded6e62a893637a ext4   99G  268M   94G   1% /
+
+	cmd = exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", uuid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-iaP", "/")
+	out_inode, inode_err := cmd.Output()
+	if err != nil {
+		saveLog("fatal", "Read df info failed: ", inode_err.Error())
+		//		os.Exit(-1)
+	}
+}
 
 func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) {
 	defer wg.Done()
