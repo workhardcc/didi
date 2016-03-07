@@ -1,7 +1,6 @@
 package main
 
 import (
-	//	"encoding/json"
 	"bufio"
 	"fmt"
 	"io"
@@ -9,7 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"reflect"
+	//  "reflect
 	"regexp"
 	"runtime"
 	"strconv"
@@ -24,7 +23,7 @@ func init() {
 
 func saveLog(loglevel string, content string) {
 	day := time.Now().Format("2006-01-02") // must 2016-01-02 or time.Now().string()[0:10]
-	logfileName := "/search/docker/docker_vm_info_" + day
+	logfileName := "/opt/docker_vm_info_" + day
 	logfile, logfileErr := os.OpenFile(logfileName, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if logfileErr != nil {
 		fmt.Printf("%s\r\n", logfileErr.Error())
@@ -62,13 +61,17 @@ func getAllContainerUuid() []string {
 }
 
 func getContainerPid(ID string) string {
-	cmd := exec.Command("docker", "inspect", "-f", "'{{.State.Pid}}'", ID)
+
+	regA := regexp.MustCompile(`docker-|.scope`)
+	duuid := regA.ReplaceAllString(ID, "")
+
+	cmd := exec.Command("docker", "inspect", "-f", "'{{.State.Pid}}'", duuid)
 	out, err := cmd.Output()
 	if err != nil {
-		saveLog("warning", "Cannot get docker's uuid"+err.Error())
+		saveLog("warning", "Cann't get docker's uuid"+err.Error())
 	}
 	reg := regexp.MustCompile(`\n|'`)
-	statePid := reg.ReplaceALLString(string(out), "")
+	statePid := reg.ReplaceAllString(string(out), "")
 	return statePid // like 7595
 }
 
@@ -84,17 +87,17 @@ func getAllContainerStat(uuid string) map[string]map[string]int {
 }
 
 func getContainerNetStat(filename string) map[string]int {
-	regA := regexp.MustCompile(`docker-|.scope`)
-	duuid := regA.ReplaceAllString(file, "")
+	//	regA := regexp.MustCompile(`docker-|.scope`)
+	//	duuid := regA.ReplaceAllString(filename, "")
 
-	statePid = getContainerPid(filename)
+	statePid := getContainerPid(filename)
 
 	res := map[string]int{}
 	file := "/proc/" + statePid + "/net/dev" //not in /cgroup but in /proc, so we need docker process id
 	f, err := os.Open(file)
 	defer f.Close()
 	if err != nil {
-		saveLog("warning", "Didn't found nic's file. "+err)
+		saveLog("warning", "Didn't found nic's file. "+err.Error())
 		os.Exit(1)
 	}
 	buf := bufio.NewReader(f)
@@ -240,22 +243,38 @@ func getContainerIoStat(uuid string) map[string]int {
 	}
 	return res
 }
-func getContainerFsStat(uuid string) {
-	cmd := exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", uuid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-ahTP", "/")
+
+func getContainerFsStat(uuid string) map[string]int {
+	statePid := getContainerPid(uuid)
+	res := map[string]int{}
+	//	nsenter --target 23104 --mount --uts --ipc --net --pid -- /bin/df -ahTP /
+	cmd := exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", statePid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-ahTP", "/") // just root directory,"/"
 	out, err := cmd.Output()
 	if err != nil {
-		saveLog("fatal", "Read df info failed: ", err.Error())
+		saveLog("fatal", statePid+"Read df info failed: "+err.Error())
 		//		os.Exit(-1)
 	}
+
 	// Filesystem    Type  Size  Used Avail Use% Mounted on
 	//	/dev/mapper/docker-253:0-9056391-17ea03785e078a621973bd9279f0d4b582a8bce3ba2012a8dded6e62a893637a ext4   99G  268M   94G   1% /
 
-	cmd = exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", uuid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-iaP", "/")
+	cap := strings.Fields(string(out))
+	reg := regexp.MustCompile(`G|%`)
+	res["cap_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(cap[13], ""))
+
+	cmd = exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", statePid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-iaP", "/")
 	out_inode, inode_err := cmd.Output()
-	if err != nil {
-		saveLog("fatal", "Read df info failed: ", inode_err.Error())
+
+	// [Filesystem Inodes IUsed IFree IUse% Mounted on /dev/mapper/docker-252:3-1188858-46dcf1dd9c445b969dcb026e86df00cd21e115ba0e9d8ee22fced2a7694aae00 655360 11857 643503 2% /]
+
+	if inode_err != nil {
+		saveLog("fatal", "Read inode info failed: "+inode_err.Error())
 		//		os.Exit(-1)
 	}
+	inode := strings.Fields(string(out_inode))
+	res["inode_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(inode[11], ""))
+	//	fmt.Println(res)
+	return res
 }
 
 func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) {
@@ -264,8 +283,10 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 	info2 := map[string]map[string]map[string]int{}
 	for _, each_uuid := range ID {
 		mem_res := getContainerMemStat(each_uuid) // only once
+		disk_res := getContainerFsStat(each_uuid)
 		info1[each_uuid] = getAllContainerStat(each_uuid)
 		info1[each_uuid]["mem"] = mem_res
+		info1[each_uuid]["disk"] = disk_res
 	}
 	//	fmt.Println(info1)
 	sleepTime := 3
@@ -303,7 +324,12 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 	net_tbyte := (float64(info2[each_uuid]["net"]["tbytes"]) - float64(info1[each_uuid]["net"]["tbytes"])) * 8.0 / float64(1024) / float64(1024) / float64(sleepTime)
 	//	net := fmt.Sprintf("|%s|check-vm-net|in=%.2f&out=%.2f", dname, net_rbyte, net_tbyte)
 	net := fmt.Sprintf("&net_in=%.2f&net_out=%.2f", net_rbyte, net_tbyte)
-	saveLog("info", cpu+mem+blkio+net)
+
+	// DISK
+	capacity := info1[each_uuid]["disk"]["cap_ratio"]
+	inode := info1[each_uuid]["disk"]["inode_ratio"]
+	disk := fmt.Sprintf("&cap=%d&inode=%d", capacity, inode)
+	saveLog("info", cpu+mem+blkio+net+disk)
 	return
 
 }
