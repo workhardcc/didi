@@ -40,7 +40,6 @@ func saveLog(loglevel string, content string) {
 		logger.SetPrefix("[UNKONW] ")
 	}
 	logger.Println(content)
-
 }
 
 func getAllContainerUuid() []string {
@@ -245,6 +244,7 @@ func getContainerIoStat(uuid string) map[string]int {
 }
 
 func getContainerFsStat(uuid string) map[string]int {
+	fake_data := map[string]int{"inode_ratio": 100, "cap_ratio": 100}
 	statePid := getContainerPid(uuid)
 	res := map[string]int{}
 	//	nsenter --target 23104 --mount --uts --ipc --net --pid -- /bin/df -ahTP /
@@ -252,7 +252,7 @@ func getContainerFsStat(uuid string) map[string]int {
 	out, err := cmd.Output()
 	if err != nil {
 		saveLog("fatal", statePid+"Read df info failed: "+err.Error())
-		//		os.Exit(-1)
+		return fake_data
 	}
 
 	// Filesystem    Type  Size  Used Avail Use% Mounted on
@@ -269,7 +269,7 @@ func getContainerFsStat(uuid string) map[string]int {
 
 	if inode_err != nil {
 		saveLog("fatal", "Read inode info failed: "+inode_err.Error())
-		//		os.Exit(-1)
+		return fake_data
 	}
 	inode := strings.Fields(string(out_inode))
 	res["inode_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(inode[11], ""))
@@ -310,9 +310,9 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 	mem_limit := float64(info1[each_uuid]["mem"]["mem_limit"]) / float64(1024)
 	mem_cache := float64(info1[each_uuid]["mem"]["total_cache"]) / float64(1024)
 	mem_mapped_file := float64(info1[each_uuid]["mem"]["total_mapped_file"]) / float64(1024)
-	rss_ratio := float64(mem_rss) / float64(mem_limit)
+	rss_ratio := float64(mem_rss) / float64(mem_limit) * 100
 	//	mem := fmt.Sprintf("|%s|check-vm-mem|rss=%.2f&quota=%.2f&cache=%.2f&mapped=%.2f&ratio=%.2f", dname, mem_rss, mem_limit, mem_cache, mem_mapped_file, rss_ratio)
-	mem := fmt.Sprintf("&mem_rss=%.2f&mem_quota=%.2f&mem_cache=%.2f&mem_mapped=%.2f&mem_ratio=%.2f", mem_rss, mem_limit, mem_cache, mem_mapped_file, rss_ratio)
+	mem := fmt.Sprintf("&mem_rss=%.2f&mem_quota=%.0f&mem_cache=%.2f&mem_mapped=%.2f&mem_ratio=%.2f", mem_rss, mem_limit, mem_cache, mem_mapped_file, rss_ratio)
 
 	// DISK
 	blkio_write := (float64(info2[each_uuid]["io"]["write"]) - float64(info1[each_uuid]["io"]["write"])) / float64(1024) / float64(sleepTime)
@@ -321,7 +321,7 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 
 	// NET
 	net_rbyte := (float64(info2[each_uuid]["net"]["rbytes"]) - float64(info1[each_uuid]["net"]["rbytes"])) * float64(8) / float64(1024) / float64(1024) / float64(sleepTime)
-	net_tbyte := (float64(info2[each_uuid]["net"]["tbytes"]) - float64(info1[each_uuid]["net"]["tbytes"])) * 8.0 / float64(1024) / float64(1024) / float64(sleepTime)
+	net_tbyte := (float64(info2[each_uuid]["net"]["tbytes"]) - float64(info1[each_uuid]["net"]["tbytes"])) * 8.0 / float64(1024) / float64(1024) / float64(sleepTime) //Mbit
 	//	net := fmt.Sprintf("|%s|check-vm-net|in=%.2f&out=%.2f", dname, net_rbyte, net_tbyte)
 	net := fmt.Sprintf("&net_in=%.2f&net_out=%.2f", net_rbyte, net_tbyte)
 
