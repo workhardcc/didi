@@ -10,20 +10,20 @@ import (
 	"os/exec"
 	//  "reflect
 	"regexp"
-	"runtime"
+	//	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-func init() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-}
+//func init() {
+//	runtime.GOMAXPROCS(runtime.NumCPU())
+//}
 
 func saveLog(loglevel string, content string) {
 	day := time.Now().Format("2006-01-02") // must 2016-01-02 or time.Now().string()[0:10]
-	logfileName := "/opt/docker_vm_info_" + day
+	logfileName := "/home/monitor/docker_vm_info_" + day
 	logfile, logfileErr := os.OpenFile(logfileName, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if logfileErr != nil {
 		fmt.Printf("%s\r\n", logfileErr.Error())
@@ -79,6 +79,7 @@ func getAllContainerStat(uuid string) map[string]map[string]int {
 	//	mem_res := getContainerMemStat(uuid)	// no need twice, collect in main()
 	net_res := getContainerNetStat(uuid)
 	io_res := getContainerIoStat(uuid)
+
 	//	all_info := map[string]map[string]int{"cpu": cpu_res, "mem": mem_res, "net": net_res, "io": io_res}	//delete mem
 	all_info := map[string]map[string]int{"cpu": cpu_res, "net": net_res, "io": io_res}
 	//fmt.Println(all_info)
@@ -212,7 +213,7 @@ func getContainerCpuStat(uuid string) map[string]int {
 func getContainerIoStat(uuid string) map[string]int {
 	//	cmd := exec.Command("lsblk | grep 2518e0f3e5fe287b74279f | awk '{print $(NF-4)}'| sort -u")
 	res := map[string]int{}
-	dm := "253:9"
+	//	dm := "253:33"
 	file := "/sys/fs/cgroup/blkio/system.slice/" + uuid + "/blkio.throttle.io_service_bytes"
 	f, err := os.Open(file)
 	defer f.Close()
@@ -226,56 +227,56 @@ func getContainerIoStat(uuid string) map[string]int {
 			break
 		}
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, dm) {
-			tmp := strings.Split(line, " ")
-			if tmp[1] == "Read" {
-				readtmp, _ := strconv.Atoi(tmp[2])
-				read := readtmp / 1024 //#transform to KB
-				res["read"] = read
-			} else if tmp[1] == "Write" {
-				writetmp, _ := strconv.Atoi(tmp[2])
-				write := writetmp / 1024 //#transform to KB
-				res["write"] = write
-			}
-			//			fmt.Println(res)
+		//		if strings.HasPrefix(line, dm) {
+		tmp := strings.Split(line, " ")
+		if tmp[1] == "Read" {
+			readtmp, _ := strconv.Atoi(tmp[2])
+			read := readtmp / 1024 //#transform to KB
+			res["read"] = read
+		} else if tmp[1] == "Write" {
+			writetmp, _ := strconv.Atoi(tmp[2])
+			write := writetmp / 1024 //#transform to KB
+			res["write"] = write
 		}
+		//			fmt.Println(res)
+		//		}
 	}
 	return res
 }
 
-func getContainerFsStat(uuid string) map[string]int {
-	fake_data := map[string]int{"inode_ratio": 100, "cap_ratio": 100}
-	statePid := getContainerPid(uuid)
-	res := map[string]int{}
-	//	nsenter --target 23104 --mount --uts --ipc --net --pid -- /bin/df -ahTP /
-	cmd := exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", statePid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-ahTP", "/") // just root directory,"/"
-	out, err := cmd.Output()
-	if err != nil {
-		saveLog("fatal", statePid+"Read df info failed: "+err.Error())
-		return fake_data
-	}
-
-	// Filesystem    Type  Size  Used Avail Use% Mounted on
-	//	/dev/mapper/docker-253:0-9056391-17ea03785e078a621973bd9279f0d4b582a8bce3ba2012a8dded6e62a893637a ext4   99G  268M   94G   1% /
-
-	cap := strings.Fields(string(out))
-	reg := regexp.MustCompile(`G|%`)
-	res["cap_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(cap[13], ""))
-
-	cmd = exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", statePid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-iaP", "/")
-	out_inode, inode_err := cmd.Output()
-
-	// [Filesystem Inodes IUsed IFree IUse% Mounted on /dev/mapper/docker-252:3-1188858-46dcf1dd9c445b969dcb026e86df00cd21e115ba0e9d8ee22fced2a7694aae00 655360 11857 643503 2% /]
-
-	if inode_err != nil {
-		saveLog("fatal", "Read inode info failed: "+inode_err.Error())
-		return fake_data
-	}
-	inode := strings.Fields(string(out_inode))
-	res["inode_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(inode[11], ""))
-	//	fmt.Println(res)
-	return res
-}
+//func getContainerFsStat(uuid string) map[string]int {
+//	fake_data := map[string]int{"inode_ratio": 100, "cap_ratio": 100}
+//	statePid := getContainerPid(uuid)
+//	res := map[string]int{}
+//	//	nsenter --target 23104 --mount --uts --ipc --net --pid -- /bin/df -ahTP /
+//	cmd := exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", statePid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-ahTP", "/") // just root directory,"/"
+//	out, err := cmd.Output()
+//	if err != nil {
+//		saveLog("fatal", statePid+"Read df info failed: "+err.Error())
+//		return fake_data
+//	}
+//
+//	// Filesystem    Type  Size  Used Avail Use% Mounted on
+//	//	/dev/mapper/docker-253:0-9056391-17ea03785e078a621973bd9279f0d4b582a8bce3ba2012a8dded6e62a893637a ext4   99G  268M   94G   1% /
+//
+//	cap := strings.Fields(string(out))
+//	reg := regexp.MustCompile(`G|%`)
+//	res["cap_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(cap[13], ""))
+//
+//	cmd = exec.Command("timeout", "-s", "SIGKILL", "3s", "nsenter", "--target", statePid, "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/df", "-iaP", "/")
+//	out_inode, inode_err := cmd.Output()
+//
+//	// [Filesystem Inodes IUsed IFree IUse% Mounted on /dev/mapper/docker-252:3-1188858-46dcf1dd9c445b969dcb026e86df00cd21e115ba0e9d8ee22fced2a7694aae00 655360 11857 643503 2% /]
+//
+//	if inode_err != nil {
+//		saveLog("fatal", "Read inode info failed: "+inode_err.Error())
+//		return fake_data
+//	}
+//	inode := strings.Fields(string(out_inode))
+//	res["inode_ratio"], _ = strconv.Atoi(reg.ReplaceAllString(inode[11], ""))
+//	//	fmt.Println(res)
+//	return res
+//}
 
 func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -283,12 +284,11 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 	info2 := map[string]map[string]map[string]int{}
 	for _, each_uuid := range ID {
 		mem_res := getContainerMemStat(each_uuid) // only once
-		disk_res := getContainerFsStat(each_uuid)
+		//		disk_res := getContainerFsStat(each_uuid)
 		info1[each_uuid] = getAllContainerStat(each_uuid)
 		info1[each_uuid]["mem"] = mem_res
-		info1[each_uuid]["disk"] = disk_res
+		//		info1[each_uuid]["disk"] = disk_res
 	}
-	//	fmt.Println(info1)
 	sleepTime := 3
 	time.Sleep(3 * time.Second)
 	for _, each_uuid := range ID {
@@ -301,9 +301,9 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 	cpu_total := cpu_user + cpu_system
 	cpu_num := info1[each_uuid]["cpu"]["cpunum"]
 	cpu_quota := cpu_num * 100
-	cpu_usage := cpu_total * 100 / cpu_quota
+	cpu_usage := float32(cpu_total) * 100.0 / float32(cpu_quota)
 	//	cpu := fmt.Sprintf("|%s|check-vm-cpu|sys_user=%d&user=%d&sys=%d&total_ratio=%d&cpu_n=%d&quota=%d", dname, cpu_total, cpu_user, cpu_system, cpu_usage, cpu_num, cpu_quota)
-	cpu := fmt.Sprintf("|%s|cpu_usg=%d&cpu_user=%d&cpu_sys=%d&cpu_ratio=%d&cpu_n=%d&quota=%d", dname, cpu_total, cpu_user, cpu_system, cpu_usage, cpu_num, cpu_quota)
+	cpu := fmt.Sprintf("|%s|cpu_usg=%d&cpu_user=%d&cpu_sys=%d&cpu_ratio=%.2f&cpu_n=%d&quota=%d", dname, cpu_total, cpu_user, cpu_system, cpu_usage, cpu_num, cpu_quota)
 
 	// MEM
 	mem_rss := float64(info1[each_uuid]["mem"]["total_rss"]) / float64(1024)
@@ -326,10 +326,10 @@ func calculate(each_uuid string, dname string, ID []string, wg *sync.WaitGroup) 
 	net := fmt.Sprintf("&net_in=%.2f&net_out=%.2f", net_rbyte, net_tbyte)
 
 	// DISK
-	capacity := info1[each_uuid]["disk"]["cap_ratio"]
-	inode := info1[each_uuid]["disk"]["inode_ratio"]
-	disk := fmt.Sprintf("&cap=%d&inode=%d", capacity, inode)
-	saveLog("info", cpu+mem+blkio+net+disk)
+	//	capacity := info1[each_uuid]["disk"]["cap_ratio"]
+	//	inode := info1[each_uuid]["disk"]["inode_ratio"]
+	//	disk := fmt.Sprintf("&cap=%d&inode=%d", capacity, inode)
+	saveLog("info", cpu+mem+blkio+net)
 	return
 
 }
