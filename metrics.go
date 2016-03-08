@@ -22,8 +22,8 @@ import (
 //}
 
 func saveLog(loglevel string, content string) {
-	day := time.Now().Format("2006-01-02") // must 2016-01-02 or time.Now().string()[0:10]
-	logfileName := "/home/monitor/docker_vm_info_" + day
+	day := time.Now().Format("2006-01-02_15") // must "2006-01-02 15:04:05" or time.Now().string()[0:10]
+	logfileName := "/home/monitor/logs/docker_vm_info_" + day
 	logfile, logfileErr := os.OpenFile(logfileName, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if logfileErr != nil {
 		fmt.Printf("%s\r\n", logfileErr.Error())

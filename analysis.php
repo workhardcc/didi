@@ -1,13 +1,16 @@
+#!/usr/bin/env php
 <?php
 date_default_timezone_set('Asia/Shanghai'); 
 @$cur_day=date("Y-m-d");
+@$cur_day_hour=date("Y-m-d_H");
 @$cur_time=date("H:i:s");
 @$timestamp=date("Y/m/d H:i:s",(strtotime("now")-60));
+$alarm_url="http://odin.xiaojukeji.com/notify";
 
 exec('docker ps | awk "{print \$NF}" | fgrep -v NAMES | wc -l ',$output);
 $vm_num=$output[0];
 
-$logfile = "/opt/docker_vm_info_$cur_day";
+$logfile = "/home/monitor/logs/docker_vm_info_$cur_day_hour";
 
 #$reg= "/^\[INFO\] 2016\/03\/07 22\:51/";     FUCK HERE!
 $reg = str_replace("/","\/",substr($timestamp,0,16));
@@ -15,6 +18,11 @@ $reg = str_replace(":","\:",$reg);
 $reg = "/^\[INFO\] ".$reg."/";
 
 $fp=fopen($logfile ,"r");
+if ($fp === false) {
+	  print_log("Fail to open $logfile for r\n");
+	  exit(1);
+}
+
 $res = array();
 while(!feof($fp)){
 	$line=trim(fgets($fp));
@@ -29,6 +37,8 @@ while(!feof($fp)){
 fclose($fp);
 
 if (count($res) != $vm_num){
+	  echo count($res)."\n";
+	  echo $vm_num."\n";
 	print_log("Seems vm num mismatch! Exit!");
 	exit(1);
 }
@@ -38,14 +48,17 @@ $standard = array(
 	"mem_ratio"=>95,
 	"net_out"=>300,
 	"net_in"=>300,
-	"cap"=>97,
-	"inode"=>97
+//	"cap"=>97,		// Didn't collect disk info, due to metrics spend a lot of time
+//	"inode"=>97
 );
 
 foreach ($res as $k => $v){
 	foreach ($standard as $key => $val){
 		if ($v[$key] > $standard[$key]){
 			if ($key == "net_out" || $key =="net_in"){
+				$string = '{"groups":["cc"],"subject": "notify", "content":"M:$k $key usage $v[$key]MB/s more than ".$val."MB/s"}';
+				$post_arr = array("content" => $string);
+				http_request($alarm_url,5,1,$string);
 				print_log("VM:$k $key usage $v[$key]MB/s more than ".$val."MB/s\n");
 			}else {
 				print_log("VM:$k $key usage $v[$key]% more than $val%\n");
@@ -62,5 +75,19 @@ function print_log($content) {
 	file_put_contents("/home/monitor/logs/analysis_message.".$cur_day, $content, FILE_APPEND | LOCK_EX);
 }
 
-#//2016/03/07 17:02:52 |desperate_cray|cpu_usg=0&cpu_user=0&cpu_sys=0&cpu_ratio=0&cpu_n=12&quota=1200&mem_rss=4.00&mem_quota=8796093022208.00&mem_cache=6.95&mem_mapped=2.47&mem_ratio=0.00&io_write=0.00&io_read=0.00&net_in=0.00&net_out=0.00&cap=1&inode=1	
+function http_request($url, $timeout = 5, $post_flag = 0, $post_data = array()) {
+	  $ch = curl_init();
+	  if (!$ch) return false;
+	  curl_setopt($ch, CURLOPT_URL, $url);
+	  curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+	  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	  if ($post_flag) {
+			curl_setopt($ch, CURLOPT_POST, 1);
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+	  }      
+	  $data = @curl_exec($ch);
+	  curl_close($ch);
+	  return $data;  
+}  
+
 ?>
