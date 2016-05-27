@@ -353,7 +353,7 @@ func main() {
 			fmt.Println(err)
 		}
 		regB := regexp.MustCompile(`\n|/|'`)
-		dname := regB.ReplaceAllString(string(out), "") // like docker13808,10.10.138.8
+		dname := regB.ReplaceAllString(string(out), "") 
 		wg.Add(1)
 		go calculate(each_uuid, dname, ID, wg)
 	}
