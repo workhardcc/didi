@@ -5,7 +5,7 @@ date_default_timezone_set('Asia/Shanghai');
 @$cur_day_hour=date("Y-m-d_H");
 @$cur_time=date("H:i:s");
 @$timestamp=date("Y/m/d H:i:s",(strtotime("now")-60));
-$alarm_url="http://odin.xiaojukeji.com/notify";
+$alarm_url="http://www.baidu.com/notify";
 
 exec('docker ps | awk "{print \$NF}" | fgrep -v NAMES | wc -l ',$output);
 $vm_num=$output[0];
