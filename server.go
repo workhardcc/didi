@@ -100,7 +100,7 @@ func handleConnection(conn net.Conn) {
 }
 
 func main() {
-	orderlist := []string{"127.0.0.1", "10.10.8.49"}
+	orderlist := []string{"127.0.0.1", "10.x.x.x"}
 	sort.Strings(orderlist)
 	ln, err := net.Listen("tcp", ":6010")
 	if err != nil {
